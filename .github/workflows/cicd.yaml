@@ -1,53 +1,70 @@
-name: workflow
+# A name for the workflow, which will be displayed in the Actions tab of your GitHub repository.
+name: CI/CD Pipeline
 
+# This section defines when the workflow will be triggered.
 on:
   push:
+    # It runs only for pushes to the 'main' branch.
     branches:
       - main
+    # It ignores changes to the README.md file, so pushes with only README updates won't trigger the workflow.
     paths-ignore:
       - 'README.md'
 
+# This defines the permissions granted to the GITHUB_TOKEN for this workflow run.
+# 'id-token: write' is needed for authenticating with cloud providers like AWS.
+# 'contents: read' is needed to check out the code.
 permissions:
   id-token: write
   contents: read
 
+# This section defines the jobs that will run as part of the workflow.
 jobs:
+  # First job: Continuous Integration
   integration:
     name: Continuous Integration
     runs-on: ubuntu-latest
     steps:
+      # Step 1: Checks out your repository under $GITHUB_WORKSPACE, so your job can access it.
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
+      # Placeholder step for linting your code.
       - name: Lint code
-        run: echo "Linting repository"
+        run: echo "Linting repository..."
 
+      # Placeholder step for running unit tests.
       - name: Run unit tests
-        run: echo "Running unit tests"
+        run: echo "Running unit tests..."
 
+  # Second job: Builds the Docker image and pushes it to Amazon ECR.
   build-and-push-ecr-image:
-    name: Continuous Delivery
+    name: Build and Push to ECR
+    # This job will only start after the 'integration' job has completed successfully.
     needs: integration
     runs-on: ubuntu-latest
+    # This section defines outputs that this job will produce, which can be used by other jobs.
+    outputs:
+      image_uri: ${{ steps.build-image.outputs.image }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install Utilities
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq unzip
+      # Configures AWS credentials for the runner.
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # Logs in to Amazon ECR.
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+        uses: aws-actions/amazon-ecr-login@v2
 
+      # Builds the Docker image, tags it, and pushes it to ECR.
+      # The image URI is then set as an output for the 'deploy' job to use.
       - name: Build, tag, and push image to Amazon ECR
         id: build-image
         env:
@@ -55,44 +72,57 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }}
           IMAGE_TAG: latest
         run: |
-          # Build a docker container and
-          # push it to ECR so that it can
-          # be deployed to ECS.
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          
-          
-  Continuous-Deployment:
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+  # Third job: Deploys the new Docker image to the self-hosted runner.
+  deploy:
+    name: Continuous Deployment
+    # This job will only start after the 'build-and-push-ecr-image' job has completed successfully.
     needs: build-and-push-ecr-image
+    # This job runs on your self-hosted runner.
     runs-on: self-hosted
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
+      # Configures AWS credentials on the self-hosted runner.
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # Logs in to Amazon ECR on the self-hosted runner.
       - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
-      
-      
-      - name: Pull latest images
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Pulls the latest Docker image from ECR.
+      # The image URI is passed from the 'build-and-push-ecr-image' job.
+      - name: Pull latest image from ECR
         run: |
-         docker pull ${{secrets.AWS_ECR_LOGIN_URI}}/${{ secrets.ECR_REPOSITORY_NAME }}:latest
-         
-      - name: Stop and remove container if running
+          docker pull ${{ needs.build-and-push-ecr-image.outputs.image_uri }}
+
+      # Stops and removes the existing container if it's running.
+      # '|| true' ensures this step doesn't fail if the container doesn't exist (e.g., on the first run).
+      - name: Stop and remove existing container
         run: |
-         docker ps -q --filter "name=cnncls" | grep -q . && docker stop cnncls && docker rm -fv cnncls
-         
-      - name: Run Docker Image to serve users
+          docker stop cnncls || true
+          docker rm cnncls || true
+
+      # Runs the new Docker image as a container.
+      # It maps port 8080 on the host to port 5000 in the container.
+      - name: Run Docker Image
         run: |
-         docker run -d -p 8080:5000 --name=cnncls -e 'AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}' -e 'AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}' -e 'AWS_REGION=${{ secrets.AWS_REGION }}'  ${{secrets.AWS_ECR_LOGIN_URI}}/${{ secrets.ECR_REPOSITORY_NAME }}:latest
-      - name: Clean previous images and containers
+          docker run -d -p 8080:5000 --name=cnncls \
+          -e AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}' \
+          -e AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}' \
+          -e AWS_REGION='${{ secrets.AWS_REGION }}' \
+          ${{ needs.build-and-push-ecr-image.outputs.image_uri }}
+
+      # Cleans up old, unused Docker images to save space.
+      - name: Clean up old images
         run: |
-         docker system prune -f
+          docker image prune -f
