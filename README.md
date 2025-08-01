@@ -25,8 +25,7 @@ aws configure
 
 
 ### Json data demo in postman
-
-http://localhost:5000/predict
+(http://127.0.0.1:5000/)
 
 ```python
 {
@@ -36,12 +35,7 @@ http://localhost:5000/predict
 
 
 
-chrome://extensions
 
-
-## how to get youtube api key from gcp:
-
-https://www.youtube.com/watch?v=i_FdiQMwKiw
 
 
 
