@@ -44,7 +44,7 @@ chrome://extensions
 https://www.youtube.com/watch?v=i_FdiQMwKiw
 
 
-AIzaSyBXGu6KBzW9CbAgv8aT-pVuR-gCMhidnUY
+
 # AWS-CICD-Deployment-with-Github-Actions
 
 ## 1. Login to AWS console.
