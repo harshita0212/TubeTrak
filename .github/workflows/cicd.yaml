@@ -37,34 +37,20 @@ jobs:
       - name: Run unit tests
         run: echo "Running unit tests..."
 
-  # Second job: Builds the Docker image and pushes it to Amazon ECR.
   build-and-push-ecr-image:
     name: Build and Push to ECR
-    # This job will only start after the 'integration' job has completed successfully.
     needs: integration
     runs-on: ubuntu-latest
-    # This section defines outputs that this job will produce, which can be used by other jobs.
     outputs:
       image_uri: ${{ steps.build-image.outputs.image }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      # ... (checkout and login steps remain the same) ...
 
-      # Configures AWS credentials for the runner.
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      # Logs in to Amazon ECR.
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Builds the Docker image, tags it, and pushes it to ECR.
-      # The image URI is then set as an output for the 'deploy' job to use.
+      # MODIFIED STEP
       - name: Build, tag, and push image to Amazon ECR
         id: build-image
         env:
@@ -72,10 +58,14 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }}
           IMAGE_TAG: latest
         run: |
+          # --- DEBUGGING LINE ---
+          echo "Building image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
+          
   # Third job: Deploys the new Docker image to the self-hosted runner.
   deploy:
     name: Continuous Deployment
