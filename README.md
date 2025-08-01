@@ -36,15 +36,8 @@ http://localhost:5000/predict
 
 
 
-chrome://extensions
 
 
-## how to get youtube api key from gcp:
-
-https://www.youtube.com/watch?v=i_FdiQMwKiw
-
-
-AIzaSyBXGu6KBzW9CbAgv8aT-pVuR-gCMhidnUY
 # AWS-CICD-Deployment-with-Github-Actions
 
 ## 1. Login to AWS console.
@@ -78,9 +71,9 @@ AIzaSyBXGu6KBzW9CbAgv8aT-pVuR-gCMhidnUY
 
 	
 ## 3. Create ECR repo to store/save docker image
-    - Save the URI: 315865595366.dkr.ecr.us-east-1.amazonaws.com/youtube
+- URI
+	728301184963.dkr.ecr.us-east-1.amazonaws.com/tubetrak
 
-	
 ## 4. Create EC2 machine (Ubuntu) 
 
 ## 5. Open EC2 and Install docker in EC2 Machine:
